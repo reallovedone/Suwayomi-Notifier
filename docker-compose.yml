@@ -10,6 +10,7 @@ services:
       TELEGRAM_TOKEN: "TELEGRAM_TOKEN"
       TELEGRAM_CHAT_ID: "TELEGRAM_CHAT_ID"
       STATE_FILE: "/app/state/state.json"
+      LOG_LEVEL: "info"
     volumes:
       - ./state:/app/state
     restart: unless-stopped

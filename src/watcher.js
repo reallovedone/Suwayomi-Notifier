@@ -5,6 +5,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { createClient } from "graphql-ws";
 import WebSocket from "ws";
 import TelegramBot from "node-telegram-bot-api";
+import pino from "pino";
 import dotenv from "dotenv";
 
 // Carica .env solo se presente
@@ -26,8 +27,29 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "TELEGRAM_CHAT_ID";
 
 const STATE_FILE = process.env.STATE_FILE || "./state/state.json";
 
+const LOG_LEVEL = process.env.LOG_LEVEL || "info";
+
 // Getting rid of the Telegram Deprecation https://github.com/yagop/node-telegram-bot-api/issues/778
 process.env.NTBA_FIX_350 = true
+
+// ============ LOGGER ============
+
+const usePretty =
+	["debug", "trace"].includes(LOG_LEVEL);
+
+const logger = pino({
+	level: LOG_LEVEL,
+	transport: usePretty
+		? {
+			target: "pino-pretty",
+			options: {
+				colorize: true,
+				translateTime: "HH:MM:ss.l",
+				ignore: "pid,hostname",
+			},
+		}
+		: undefined,
+});
 
 // ================================
 
@@ -46,16 +68,24 @@ const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
 
 let state = { lastSeen: {} };
 
-// --- utilities stato ---
+// --- state utilities ---
+
 function loadState() {
 	try {
 		if (existsSync(STATE_FILE)) {
 			const raw = readFileSync(STATE_FILE, "utf8");
 			state = JSON.parse(raw);
 			if (!state.lastSeen) state.lastSeen = {};
+			logger.info({ file: STATE_FILE }, "State loaded successfully");
+		} else {
+			logger.info({ file: STATE_FILE }, "State file not found, starting with empty state");
+			state = { lastSeen: {} };
 		}
 	} catch (e) {
-		console.warn("Impossibile leggere stato, riparto da zero:", e.message);
+		logger.warn(
+			{ error: e.message, file: STATE_FILE },
+			"State load failed, initializing fresh state"
+		);
 		state = { lastSeen: {} };
 	}
 }
@@ -63,8 +93,12 @@ function loadState() {
 function saveState() {
 	try {
 		writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+		logger.debug({ file: STATE_FILE }, "State saved");
 	} catch (e) {
-		console.error("Impossibile scrivere lo stato:", e.message);
+		logger.error(
+			{ error: e.message, file: STATE_FILE },
+			"State write failed"
+		);
 	}
 }
 
@@ -81,7 +115,7 @@ async function graphqlHttp(query, variables = {}) {
 	});
 
 	if (res.status === 401) {
-		console.log("Token scaduto, rifaccio login...");
+		logger.info("Access token expired, re-authenticating...");
 		await login();
 		return graphqlHttp(query, variables);
 	}
@@ -98,6 +132,22 @@ async function graphqlHttp(query, variables = {}) {
 	return data.data;
 }
 
+function isWsUnauthorizedError(err) {
+	if (!err) return false;
+
+	if (Array.isArray(err)) {
+		return err.some((e) =>
+			String(e.message || "").includes("Unauthorized")
+		);
+	}
+
+	const msg = typeof err === "string"
+		? err
+		: JSON.stringify(err);
+
+	return msg.includes("Unauthorized");
+}
+
 // --- login ---
 
 const LOGIN_MUTATION = `
@@ -109,7 +159,7 @@ mutation Login($input: LoginInput!) {
 `;
 
 async function login() {
-	console.log("Login a Suwayomi...");
+	logger.info("Authenticating with Suwayomi...");
 	const data = await graphqlHttp(LOGIN_MUTATION, {
 		input: {
 			username: SUWAYOMI_USERNAME,
@@ -117,7 +167,7 @@ async function login() {
 		},
 	});
 	accessToken = data.login.accessToken;
-	console.log("Login OK, token ottenuto.");
+	logger.info("Authentication succeeded, access token issued");
 }
 
 // --- Telegram ---
@@ -137,14 +187,21 @@ async function fetchThumbnailBuffer(thumbnailPath) {
 		});
 
 		if (!res.ok) {
-			console.warn(`Impossibile scaricare thumbnail: HTTP ${res.status}`);
+			logger.warn(
+				{ status: res.status, url: thumbnailPath },
+				"Thumbnail request failed"
+			);
 			return null;
 		}
 
 		const arrayBuffer = await res.arrayBuffer();
+		logger.debug({ url: thumbnailPath }, "Thumbnail fetched successfully");
 		return Buffer.from(arrayBuffer);
 	} catch (e) {
-		console.error("Errore nel fetch della thumbnail:", e.message);
+		logger.error(
+			{ error: e.message, url: thumbnailPath },
+			"Thumbnail fetch failure"
+		);
 		return null;
 	}
 }
@@ -161,9 +218,13 @@ async function sendTelegram(manga, chap, status) {
 		`*${escape(manga.title)}*`,
 		chap.name ? `_${escape(chap.name)}_` : null,
 		`Ch\\. ${escape(chap.chapterNumber)}`,
-		manga.source ? `Source ${escape(manga.source.name)} \\(${escape(manga.source.lang)}\\)` : null,
+		manga.source
+			? `Source ${escape(manga.source.name)} \\(${escape(manga.source.lang)}\\)`
+			: null,
 		`Uploaded ${escape(uploadDate)}`,
-	].filter(Boolean).join("\n");
+	]
+		.filter(Boolean)
+		.join("\n");
 
 	const caption = lines;
 
@@ -171,7 +232,9 @@ async function sendTelegram(manga, chap, status) {
 		let thumbnailBuffer = null;
 
 		if (manga.thumbnailUrl) {
-			thumbnailBuffer = await fetchThumbnailBuffer(`${SUWAYOMI_HTTP}${manga.thumbnailUrl}`);
+			thumbnailBuffer = await fetchThumbnailBuffer(
+				`${SUWAYOMI_HTTP}${manga.thumbnailUrl}`
+			);
 		}
 
 		if (thumbnailBuffer) {
@@ -193,12 +256,30 @@ async function sendTelegram(manga, chap, status) {
 				disable_web_page_preview: true,
 			});
 		}
+
+		logger.info(
+			{
+				manga: manga.title,
+				chapter: chap.chapterNumber,
+				name: chap.name,
+				status,
+			},
+			"Telegram notification sent"
+		);
 	} catch (e) {
-		console.error("Telegram send error:", e.message);
+		logger.error(
+			{
+				error: e.message,
+				manga: manga.title,
+				chapter: chap.chapterNumber,
+				status,
+			},
+			"Telegram delivery failure"
+		);
 	}
 }
 
-// --- gestione aggiornamenti ---
+// --- update handling ---
 
 async function handleUpdates(mangaUpdates, notifyNew = true) {
 	const lastSeen = state.lastSeen || {};
@@ -217,23 +298,29 @@ async function handleUpdates(mangaUpdates, notifyNew = true) {
 
 		const prev = lastSeen[mangaId];
 
-		// Prima volta: solo registro, non notifico (baseline)
+		// First time: just register as baseline, don't notify
 		if (prev === undefined) {
 			lastSeen[mangaId] = chapId;
 			changed = true;
 			continue;
 		}
 
-		// Nessun cambiamento
+		// No change
 		if (prev === chapId) continue;
 
-		// Capitolo nuovo
+		// New chapter
 		lastSeen[mangaId] = chapId;
 		changed = true;
 
 		if (notifyNew) {
-			console.log(
-				`Nuovo capitolo per ${manga.title}: #${chap.chapterNumber} ${chap.name}`
+			logger.info(
+				{
+					manga: manga.title,
+					chapter: chap.chapterNumber,
+					name: chap.name,
+					status: item.status,
+				},
+				"New chapter detected"
 			);
 
 			notificationsQueue.push({
@@ -262,11 +349,11 @@ subscription Updates {
       manga {
         id
         title
-		thumbnailUrl
-		source {
-		  name
-		  lang
-		}
+        thumbnailUrl
+        source {
+          name
+          lang
+        }
         latestFetchedChapter {
           id
           chapterNumber
@@ -284,7 +371,7 @@ async function start() {
 	await login();
 
 	while (true) {
-		console.log("Apro WebSocket verso Suwayomi:", SUWAYOMI_WS);
+		logger.info({ url: SUWAYOMI_WS }, "Connecting to Suwayomi WebSocket");
 
 		const client = createClient({
 			url: SUWAYOMI_WS,
@@ -300,18 +387,11 @@ async function start() {
 					next: async (msg) => {
 						const payload = msg?.data?.libraryUpdateStatusChanged;
 						if (!payload) return;
-
 						const { mangaUpdates } = payload;
 
-						console.log(
-							"EVENTO WS:",
-							JSON.stringify(
-								{
-									mangaUpdatesCount: mangaUpdates?.length || 0,
-								},
-								null,
-								2
-							)
+						logger.debug(
+							{ updates: mangaUpdates?.length || 0 },
+							"WebSocket update event"
 						);
 
 						if (!mangaUpdates || mangaUpdates.length === 0) return;
@@ -322,16 +402,36 @@ async function start() {
 								await sendTelegram(manga, chap, status);
 							}
 						} catch (e) {
-							console.error("Errore durante handleUpdates / invio notifiche:", e.message);
+							logger.error(
+								{ error: e.message },
+								"Update handling or Telegram dispatch failure"
+							);
 						}
 					},
-					error: (err) => {
-						console.error("Errore WS:", err);
+					error: async (err) => {
+						if (isWsUnauthorizedError(err)) {
+							logger.warn(
+								{ error: err },
+								"Unauthorized WebSocket event, attempting re-authentication"
+							);
+							try {
+								await login();
+								logger.info("Access token refreshed successfully");
+							} catch (e) {
+								logger.error(
+									{ error: e.message },
+									"Re-authentication failed after Unauthorized WebSocket event"
+								);
+							}
+						} else {
+							logger.error({ error: err }, "Unhandled WebSocket error");
+						}
+
 						finished = true;
 						resolve();
 					},
 					complete: () => {
-						console.log("Subscription completata/chiusa.");
+						logger.info("WebSocket subscription closed");
 						finished = true;
 						resolve();
 					},
@@ -340,19 +440,22 @@ async function start() {
 		});
 
 		if (finished) {
-			console.log("Mi riconnetto tra 5 secondi...");
+			logger.info("Reconnecting in 5 seconds...");
 			await new Promise((r) => setTimeout(r, 5000));
 
 			try {
 				await login();
 			} catch (e) {
-				console.error("Errore nel rilogin:", e.message);
+				logger.error(
+					{ error: e.message },
+					"Re-authentication failed during reconnect"
+				);
 			}
 		}
 	}
 }
 
 start().catch((e) => {
-	console.error("Errore fatale:", e);
+	logger.fatal({ error: e }, "Fatal application error");
 	process.exit(1);
 });

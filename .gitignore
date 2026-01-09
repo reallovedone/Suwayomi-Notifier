@@ -6,8 +6,7 @@ npm-debug.log*
 .env
 
 # Stato runtime
-state/
-!state/.gitkeep
+state/*
 
 # Docker
 *.log
