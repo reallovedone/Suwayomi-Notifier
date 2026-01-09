@@ -411,7 +411,6 @@ async function start() {
 					error: async (err) => {
 						if (isWsUnauthorizedError(err)) {
 							logger.warn(
-								{ error: err },
 								"Unauthorized WebSocket event, attempting re-authentication"
 							);
 							try {
@@ -442,15 +441,6 @@ async function start() {
 		if (finished) {
 			logger.info("Reconnecting in 5 seconds...");
 			await new Promise((r) => setTimeout(r, 5000));
-
-			try {
-				await login();
-			} catch (e) {
-				logger.error(
-					{ error: e.message },
-					"Re-authentication failed during reconnect"
-				);
-			}
 		}
 	}
 }
