@@ -1,14 +1,14 @@
 services:
   suwayomi-notifier:
-    build: .
+    image: ghcr.io/reallovedone/suwayomi-notifier:latest
     container_name: suwayomi-notifier
     environment:
       SUWAYOMI_HTTP: "http://suwayomi:4567"
       SUWAYOMI_WS: "ws://suwayomi:4567/api/graphql"
-      SUWAYOMI_USERNAME: ""
-      SUWAYOMI_PASSWORD: ""
-      TELEGRAM_TOKEN: ""
-      TELEGRAM_CHAT_ID: ""
+      SUWAYOMI_USERNAME: "USERNAME"
+      SUWAYOMI_PASSWORD: "PASSWORD"
+      TELEGRAM_TOKEN: "TELEGRAM_TOKEN"
+      TELEGRAM_CHAT_ID: "TELEGRAM_CHAT_ID"
       STATE_FILE: "/app/state/state.json"
     volumes:
       - ./state:/app/state

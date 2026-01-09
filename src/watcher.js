@@ -21,8 +21,8 @@ const SUWAYOMI_WS =
 const SUWAYOMI_USERNAME = process.env.SUWAYOMI_USERNAME || "USERNAME";
 const SUWAYOMI_PASSWORD = process.env.SUWAYOMI_PASSWORD || "PASSWORD";
 
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "BOT_TOKEN";
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "CHAT_ID";
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "TELEGRAM_TOKEN";
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "TELEGRAM_CHAT_ID";
 
 const STATE_FILE = process.env.STATE_FILE || "./state/state.json";
 
@@ -161,7 +161,7 @@ async function sendTelegram(manga, chap, status) {
 		`*${escape(manga.title)}*`,
 		chap.name ? `_${escape(chap.name)}_` : null,
 		`Ch\\. ${escape(chap.chapterNumber)}`,
-		manga.source ? `Soruce ${escape(manga.source.name)} \\(${escape(manga.source.lang)}\\)` : null,
+		manga.source ? `Source ${escape(manga.source.name)} \\(${escape(manga.source.lang)}\\)` : null,
 		`Uploaded ${escape(uploadDate)}`,
 	].filter(Boolean).join("\n");
 
@@ -201,8 +201,6 @@ async function sendTelegram(manga, chap, status) {
 // --- gestione aggiornamenti ---
 
 async function handleUpdates(mangaUpdates, notifyNew = true) {
-	// ToDo Rimuoere loadstate
-	loadState()
 	const lastSeen = state.lastSeen || {};
 	let changed = false;
 

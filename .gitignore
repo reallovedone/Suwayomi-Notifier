@@ -11,3 +11,4 @@ state/
 
 # Docker
 *.log
+docker-compose.local.yml
