@@ -1,0 +1,17 @@
+{
+  "name": "suwayomi-notifier",
+  "version": "1.0.0",
+  "description": "Get New Chapters notification",
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "scripts": {
+	"start": "node src/watcher.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "graphql-ws": "^6.0.6",
+    "node-telegram-bot-api": "^0.67.0",
+    "ws": "^8.19.0"
+  }
+}

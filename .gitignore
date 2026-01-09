@@ -1,0 +1,13 @@
+# Node
+node_modules
+npm-debug.log*
+
+# Env / secrets
+.env
+
+# Stato runtime
+state/
+!state/.gitkeep
+
+# Docker
+*.log
