@@ -1,66 +1,75 @@
 # Suwayomi Notifier
 
-Notifier Telegram per [Suwayomi / Tachidesk](https://github.com/Suwayomi) che invia un messaggio ogni volta che viene rilevato un nuovo capitolo manga.
+Telegram Notifier for [Suwayomi / Tachidesk](https://github.com/Suwayomi/Suwayomi-Server) that sends a message whenever a new manga chapter is detected.
 
-Funziona tramite WebSocket + GraphQL subscription, con salvataggio dello stato per evitare notifiche duplicate.
-
----
-
-## 🚀 Funzionalità
-
-- Notifiche Telegram in tempo reale
-- Login automatico verso Suwayomi
-- Riconnessione automatica al WebSocket
-- Salvataggio dello stato su `state.json`
-- Nessuna notifica duplicata
-- Pensato per funzionare in Docker
+Works through WebSocket + GraphQL subscriptions, with state persistence to avoid duplicate notifications.
 
 ---
 
-## 📦 Requisiti
+## 🚀 Features
+
+- Real-time Telegram notifications
+- Automatic login to Suwayomi
+- Automatic WebSocket reconnection
+- State persistence via `state.json`
+- No duplicate notifications
+- Docker-friendly
+
+---
+
+## 📦 Requirements
 
 - Docker
 - Docker Compose
-- Istanza Suwayomi raggiungibile dal container
-- Bot Telegram + Chat ID
+- Suwayomi instance reachable from the container
+- Telegram Bot + Chat ID
 
 ---
 
-## ⚙️ Configurazione
+## ⚠️ Important — Enable Automatic Updates in Suwayomi
 
-Crea un file `.env` (opzionale) con:
+For the notifier to work correctly, **Suwayomi must be configured to automatically update the library**.
 
-```env
-SUWAYOMI_HTTP=http://suwayomi:4567
-SUWAYOMI_WS=ws://suwayomi:4567/api/graphql
-SUWAYOMI_USERNAME=<username>
-SUWAYOMI_PASSWORD=<password>
-TELEGRAM_TOKEN=<token del bot telegram>
-TELEGRAM_CHAT_ID=<chat id telegram>
-STATE_FILE=/app/state/state.json
+In Suwayomi:
+
+```
+Settings → Library → Global update
 ```
 
-> Nota: se Suwayomi gira su Docker nella stessa network, puoi raggiungerlo come `http://suwayomi:4567`.
+Enable:
+
+- **Automatic Updates**
+- Set an **Automatic Update interval**
+
+Without this, Suwayomi will not detect new chapters, and no notifications will be sent.
 
 ---
 
-## 🐳 Esecuzione con Docker Compose
+## 🐳 Running with Docker Compose
 
-Esempio di `docker-compose.yml`:
+Example `docker-compose.yml`:
 
 ```yaml
 services:
   suwayomi-notifier:
-    build: .
+    image: ghcr.io/reallovedone/suwayomi-notifier:latest
     container_name: suwayomi-notifier
-    env_file:
-      - .env
+    environment:
+      SUWAYOMI_HTTP: "http://suwayomi:4567"
+      SUWAYOMI_WS: "ws://suwayomi:4567/api/graphql"
+      SUWAYOMI_USERNAME: "USERNAME"
+      SUWAYOMI_PASSWORD: "PASSWORD"
+      TELEGRAM_TOKEN: "TELEGRAM_TOKEN"
+      TELEGRAM_CHAT_ID: "TELEGRAM_CHAT_ID"
+      STATE_FILE: "/app/state/state.json"
     volumes:
       - ./state:/app/state
     restart: unless-stopped
 ```
 
-Avvio:
+> Note: If Suwayomi runs in Docker on the same network, it can be reached as `http://suwayomi:4567`.
+
+Start:
 
 ```bash
 docker-compose up -d
@@ -74,7 +83,7 @@ docker-compose down
 
 ---
 
-## 📁 Struttura del progetto
+## 📁 Project Structure
 
 ```text
 suwayomi-notifier/
@@ -94,24 +103,24 @@ suwayomi-notifier/
 
 ---
 
-## 📝 Note Operative
+## 📝 Operational Notes
 
-- Il file `state.json` viene generato in runtime (non committarlo).
-- Al primo avvio **non invia notifiche**: registra solo lo stato attuale.
-- Se lo stato viene cancellato → al successivo avvio crea un nuovo baseline.
-- Riconnette automaticamente il WebSocket se cade o se scade il token.
-
----
-
-## 👤 Autore
-
-Maintainer: reallovedone
-
-Contributi e PR benvenuti ✨
+- `state.json` is generated at runtime (do not commit it).
+- On first startup, **no notifications are sent**: the current state is stored as baseline.
+- If the state is deleted, a new baseline will be created on next startup.
+- The WebSocket automatically reconnects if it drops or if the token expires.
 
 ---
 
-## 📄 Licenza
+## 👤 Author
 
-Questo progetto è distribuito sotto licenza **ISC**.  
-Vedi il file `LICENSE` per maggiori dettagli.
+Maintainer: **reallovedone**
+
+Contributions and PRs are welcome ✨
+
+---
+
+## 📄 License
+
+This project is distributed under the **ISC** license.  
+See the `LICENSE` file for details.
