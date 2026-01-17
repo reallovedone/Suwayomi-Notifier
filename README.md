@@ -51,12 +51,14 @@ For notifications to work, Suwayomi must be configured to automatically update t
 
 In Suwayomi:
 
+```
 Settings → Library → Global update
+```
 
 Enable:
 
-- Automatic Updates
-- Pick an Automatic Update interval
+- **Automatic Updates**
+- Set an **Automatic Update interval**
 
 Without this, Suwayomi will not detect new chapters, and no notifications will be sent.
 
@@ -66,6 +68,7 @@ Without this, Suwayomi will not detect new chapters, and no notifications will b
 
 Example `docker-compose.yml`:
 
+```yaml
 services:
   suwayomi-notifier:
     image: ghcr.io/reallovedone/suwayomi-notifier:latest
@@ -85,19 +88,24 @@ services:
     volumes:
       - ./state:/app/state
     restart: unless-stopped
-
-Note: If Suwayomi runs in Docker on the same network, it can be reached as `http://suwayomi:4567`.
+```
+> Note: If Suwayomi runs in Docker on the same network, it can be reached as `http://suwayomi:4567`.
 
 Start:
+```bash
 docker-compose up -d
+```
 
 Stop:
+```bash
 docker-compose down
+```
 
 ---
 
 ## 📁 Project Structure
 
+```text
 suwayomi-notifier/
   docker-compose.yml
   Dockerfile
@@ -110,6 +118,7 @@ suwayomi-notifier/
   .gitignore
   LICENSE
   README.md
+```
 
 ---
 
