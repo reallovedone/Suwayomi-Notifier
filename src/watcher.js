@@ -1,10 +1,9 @@
 // src/watcher.js
-// Suwayomi → GraphQL subscription → Telegram (realtime)
+// Suwayomi - GraphQL subscription - Apprise API (realtime)
 
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { createClient } from "graphql-ws";
 import WebSocket from "ws";
-import TelegramBot from "node-telegram-bot-api";
 import pino from "pino";
 import dotenv from "dotenv";
 
@@ -22,15 +21,14 @@ const SUWAYOMI_WS =
 const SUWAYOMI_USERNAME = process.env.SUWAYOMI_USERNAME || "USERNAME";
 const SUWAYOMI_PASSWORD = process.env.SUWAYOMI_PASSWORD || "PASSWORD";
 
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "TELEGRAM_TOKEN";
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "TELEGRAM_CHAT_ID";
+const APPRISE_API_URL = process.env.APPRISE_API_URL || "";
+const APPRISE_TARGET = process.env.APPRISE_TARGET || "";
+const APPRISE_TAGS = process.env.APPRISE_TAGS || "";
+const APPRISE_FORMAT = process.env.APPRISE_FORMAT || "text";
 
 const STATE_FILE = process.env.STATE_FILE || "./state/state.json";
 
 const LOG_LEVEL = process.env.LOG_LEVEL || "info";
-
-// Getting rid of the Telegram Deprecation https://github.com/yagop/node-telegram-bot-api/issues/778
-process.env.NTBA_FIX_350 = true
 
 // ============ LOGGER ============
 
@@ -63,8 +61,6 @@ class MyWebSocket extends WebSocket {
 		super(address, protocols, { headers });
 	}
 }
-
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
 
 let state = { lastSeen: {} };
 
@@ -170,17 +166,37 @@ async function login() {
 	logger.info("Authentication succeeded, access token issued");
 }
 
-// --- Telegram ---
+// --- Apprise API ---
 
-function escape(str = "") {
-	return String(str).replace(/([_*\[\]()~`>#+\-=|{}.!])/g, "\\$1");
+function buildAppriseNotifyUrl(baseUrl) {
+	const trimmed = String(baseUrl || "").replace(/\/+$/, "");
+	if (!trimmed) return "";
+	return trimmed.endsWith("/notify") ? trimmed : `${trimmed}/notify`;
 }
 
-async function fetchThumbnailBuffer(thumbnailPath) {
-	if (!thumbnailPath) return null;
+function buildAppriseRequestInit(payload, attachment) {
+	const form = new FormData();
+
+	for (const [key, value] of Object.entries(payload)) {
+		if (value !== undefined && value !== null) {
+			form.append(key, String(value));
+		}
+	}
+
+	if (attachment) {
+		const blob = new Blob([attachment.buffer], { type: attachment.contentType });
+		const ext = attachment.contentType.includes("png") ? ".png" : ".jpg";
+		form.append("attach", blob, `thumbnail${ext}`);	
+	}
+
+	return { method: "POST", body: form };
+}
+
+async function fetchThumbnailBuffer(thumbnailUrl) {
+	if (!thumbnailUrl) return null;
 
 	try {
-		const res = await fetch(thumbnailPath, {
+		const res = await fetch(thumbnailUrl, {
 			headers: accessToken
 				? { Authorization: `Bearer ${accessToken}` }
 				: {},
@@ -188,73 +204,82 @@ async function fetchThumbnailBuffer(thumbnailPath) {
 
 		if (!res.ok) {
 			logger.warn(
-				{ status: res.status, url: thumbnailPath },
+				{ status: res.status, url: thumbnailUrl },
 				"Thumbnail request failed"
 			);
 			return null;
 		}
 
 		const arrayBuffer = await res.arrayBuffer();
-		logger.debug({ url: thumbnailPath }, "Thumbnail fetched successfully");
-		return Buffer.from(arrayBuffer);
+		const contentType = res.headers.get("content-type") || "application/octet-stream";
+		logger.debug({ url: thumbnailUrl }, "Thumbnail fetched successfully");
+		return { buffer: Buffer.from(arrayBuffer), contentType };
 	} catch (e) {
 		logger.error(
-			{ error: e.message, url: thumbnailPath },
+			{ error: e.message, url: thumbnailUrl },
 			"Thumbnail fetch failure"
 		);
 		return null;
 	}
 }
 
-async function sendTelegram(manga, chap, status) {
+async function sendApprise(manga, chap, status) {
+	if (!APPRISE_API_URL || !APPRISE_TARGET) {
+		logger.error(
+			{ APPRISE_API_URL, APPRISE_TARGET },
+			"Apprise configuration missing"
+		);
+		return;
+	}
+
+	const notifyUrl = buildAppriseNotifyUrl(APPRISE_API_URL);
 	const uploadMs = parseInt(chap.uploadDate || "0", 10);
 	const uploadDate = Number.isNaN(uploadMs)
 		? chap.uploadDate
 		: new Date(uploadMs).toISOString().slice(0, 16).replace("T", " ");
 
-	const lines = [
+	const thumbnailUrl = manga.thumbnailUrl
+		? `${SUWAYOMI_HTTP}${manga.thumbnailUrl}`
+		: null;
+
+	const body = [
 		`📚 New Chapter Available`,
-		` `,
-		`*${escape(manga.title)}*`,
-		chap.name ? `_${escape(chap.name)}_` : null,
-		`Ch\\. ${escape(chap.chapterNumber)}`,
+		" ",
+		manga.title,
+		chap.name ? chap.name : null,
+		`Ch. ${chap.chapterNumber}`,
 		manga.source
-			? `Source ${escape(manga.source.name)} \\(${escape(manga.source.lang)}\\)`
+			? `Source ${manga.source.name} (${manga.source.lang.toString().toUpperCase()})`
 			: null,
-		`Uploaded ${escape(uploadDate)}`,
+		`Uploaded ${uploadDate}`
 	]
 		.filter(Boolean)
 		.join("\n");
 
-	const caption = lines;
+	const payload = {
+		title: "Suwayomi",
+		body,
+		urls: APPRISE_TARGET,
+		format: APPRISE_FORMAT,
+	};
+
+	if (APPRISE_TAGS) payload.tags = APPRISE_TAGS;
 
 	try {
-		let thumbnailBuffer = null;
+		const attachment = thumbnailUrl
+			? await fetchThumbnailBuffer(thumbnailUrl)
+			: null;
 
-		if (manga.thumbnailUrl) {
-			thumbnailBuffer = await fetchThumbnailBuffer(
-				`${SUWAYOMI_HTTP}${manga.thumbnailUrl}`
-			);
+		const requestInit = buildAppriseRequestInit(payload, attachment);
+
+		if (thumbnailUrl && !requestInit.body.has("attach")) {
+			logger.warn("Skipping thumbnail attachment due to fetch failure");
 		}
 
-		if (thumbnailBuffer) {
-			const fileOptions = {
-				filename: "thumbnail",
-				contentType: "image/jpeg",
-			};
-
-			await bot.sendPhoto(TELEGRAM_CHAT_ID,
-				thumbnailBuffer,
-				{
-					caption,
-					parse_mode: "MarkdownV2",
-				},
-				fileOptions);
-		} else {
-			await bot.sendMessage(TELEGRAM_CHAT_ID, caption, {
-				parse_mode: "MarkdownV2",
-				disable_web_page_preview: true,
-			});
+		const res = await fetch(notifyUrl, requestInit);
+		if (!res.ok) {
+			const text = await res.text();
+			throw new Error(`HTTP ${res.status}: ${text}`);
 		}
 
 		logger.info(
@@ -264,7 +289,7 @@ async function sendTelegram(manga, chap, status) {
 				name: chap.name,
 				status,
 			},
-			"Telegram notification sent"
+			"Apprise notification sent"
 		);
 	} catch (e) {
 		logger.error(
@@ -274,7 +299,7 @@ async function sendTelegram(manga, chap, status) {
 				chapter: chap.chapterNumber,
 				status,
 			},
-			"Telegram delivery failure"
+			"Apprise delivery failure"
 		);
 	}
 }
@@ -399,12 +424,12 @@ async function start() {
 						try {
 							const queue = await handleUpdates(mangaUpdates, true);
 							for (const { manga, chap, status } of queue) {
-								await sendTelegram(manga, chap, status);
+								await sendApprise(manga, chap, status);
 							}
 						} catch (e) {
 							logger.error(
 								{ error: e.message },
-								"Update handling or Telegram dispatch failure"
+								"Update handling or Apprise dispatch failure"
 							);
 						}
 					},

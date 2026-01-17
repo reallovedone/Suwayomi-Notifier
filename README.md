@@ -1,6 +1,6 @@
 # Suwayomi Notifier
 
-Telegram Notifier for [Suwayomi / Tachidesk](https://github.com/Suwayomi/Suwayomi-Server) that sends a message whenever a new manga chapter is detected.
+Notifier for [Suwayomi / Tachidesk](https://github.com/Suwayomi/Suwayomi-Server) that sends notifications whenever new manga chapters are detected.
 
 Works through WebSocket + GraphQL subscriptions, with state persistence to avoid duplicate notifications.
 
@@ -8,7 +8,8 @@ Works through WebSocket + GraphQL subscriptions, with state persistence to avoid
 
 ## 🚀 Features
 
-- Real-time Telegram notifications
+- Real-time notifications via [Apprise](https://github.com/caronc/apprise-api)
+- Supports tons of destinations (Telegram, Discord, Webhooks, Slack, Email, etc.)
 - Automatic login to Suwayomi
 - Automatic WebSocket reconnection
 - State persistence via `state.json`
@@ -17,29 +18,45 @@ Works through WebSocket + GraphQL subscriptions, with state persistence to avoid
 
 ---
 
+## 🔔 About [Apprise](https://github.com/caronc/apprise-api)
+
+This project uses Apprise for notification delivery.
+
+Apprise provides a unified way to send notifications to hundreds of services using simple URL-style identifiers.
+
+Popular examples:
+
+- Telegram: `tgram://TOKEN/CHAT_ID`
+- Discord: `discord://WEBHOOK_ID/WEBHOOK_TOKEN`
+- Slack: `slack://TOKEN/CHANNEL`
+- Email: `mailto://user:pass@smtp.example.com`
+- Webhooks: `json://endpoint.example.com/webhook`
+
+You can configure multiple targets and formats, and optionally route by tags.
+
+---
+
 ## 📦 Requirements
 
 - Docker
 - Docker Compose
 - Suwayomi instance reachable from the container
-- Telegram Bot + Chat ID
+- Apprise API endpoint (`apprise-api` docker image)
 
 ---
 
 ## ⚠️ Important — Enable Automatic Updates in Suwayomi
 
-For the notifier to work correctly, **Suwayomi must be configured to automatically update the library**.
+For notifications to work, Suwayomi must be configured to automatically update the library.
 
 In Suwayomi:
 
-```
 Settings → Library → Global update
-```
 
 Enable:
 
-- **Automatic Updates**
-- Set an **Automatic Update interval**
+- Automatic Updates
+- Pick an Automatic Update interval
 
 Without this, Suwayomi will not detect new chapters, and no notifications will be sent.
 
@@ -49,7 +66,6 @@ Without this, Suwayomi will not detect new chapters, and no notifications will b
 
 Example `docker-compose.yml`:
 
-```yaml
 services:
   suwayomi-notifier:
     image: ghcr.io/reallovedone/suwayomi-notifier:latest
@@ -59,33 +75,29 @@ services:
       SUWAYOMI_WS: "ws://suwayomi:4567/api/graphql"
       SUWAYOMI_USERNAME: "USERNAME"
       SUWAYOMI_PASSWORD: "PASSWORD"
-      TELEGRAM_TOKEN: "TELEGRAM_TOKEN"
-      TELEGRAM_CHAT_ID: "TELEGRAM_CHAT_ID"
+
+      APPRISE_API_URL: "http://apprise-api:8000"
+      APPRISE_TARGET: "tgram://TOKEN/CHAT_ID"
+      APPRISE_TAGS: "suwayomi"
+      APPRISE_FORMAT: "text"
+
       STATE_FILE: "/app/state/state.json"
     volumes:
       - ./state:/app/state
     restart: unless-stopped
-```
 
-> Note: If Suwayomi runs in Docker on the same network, it can be reached as `http://suwayomi:4567`.
+Note: If Suwayomi runs in Docker on the same network, it can be reached as `http://suwayomi:4567`.
 
 Start:
-
-```bash
 docker-compose up -d
-```
 
 Stop:
-
-```bash
 docker-compose down
-```
 
 ---
 
 ## 📁 Project Structure
 
-```text
 suwayomi-notifier/
   docker-compose.yml
   Dockerfile
@@ -94,19 +106,17 @@ suwayomi-notifier/
   src/
     watcher.js
   state/
-    .gitkeep
   .env.example
   .gitignore
   LICENSE
   README.md
-```
 
 ---
 
 ## 📝 Operational Notes
 
 - `state.json` is generated at runtime (do not commit it).
-- On first startup, **no notifications are sent**: the current state is stored as baseline.
+- On first startup, no notifications are sent: the current state is stored as baseline.
 - If the state is deleted, a new baseline will be created on next startup.
 - The WebSocket automatically reconnects if it drops or if the token expires.
 
@@ -114,7 +124,7 @@ suwayomi-notifier/
 
 ## 👤 Author
 
-Maintainer: **reallovedone**
+Maintainer: reallovedone
 
 Contributions and PRs are welcome ✨
 
@@ -122,5 +132,5 @@ Contributions and PRs are welcome ✨
 
 ## 📄 License
 
-This project is distributed under the **ISC** license.  
-See the `LICENSE` file for details.
+This project is distributed under the ISC license.
+See the LICENSE file for details.
